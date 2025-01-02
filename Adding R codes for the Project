@@ -1,0 +1,483 @@
+```R
+##### DISSERTATION #####
+
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(skimr)
+library(broom) 
+library(haven)
+library(stargazer)
+library(RColorBrewer)
+library(gridExtra)
+library(glmnet)
+library(car)
+library(caret)
+library(sjPlot)
+
+setwd("C:/Users/HP/OneDrive/My Data Sources")
+
+###Import Data set ####
+survey <- read_dta("ecs2019_mm_ukds.dta")
+
+survey <- survey %>% filter (country %in% c(28,11,15,26,10,21))
+
+
+### DATA PREPARATION AND DATA RESTRICTION ###
+
+## Select Variables ##
+ecds <- survey %>% select (country,smainact_d,scr_size_grp,est_type,actprod,actdede,
+                         innoprod,innoproc,innomark,ictapp,supchek,
+                         motimon,motimis,motichal,motilearn,staffme,suggs,
+                         posres,prodvol,retainemp,skillch,
+                         pdemstab,competmark,learnnoneed_d,teamex,chemp)
+
+## Renaming variables ##
+ecds <- ecds %>% rename(industry = "smainact_d",size = "scr_size_grp",firm_type = "est_type",
+                        collaboration = "actprod",design_collaboration = "actdede",product_innovation = "innoprod",
+                        process_innovation = "innoproc",marketing_innovation = "innomark",manager_approach="supchek",
+                        monetary_reward = "motimon",vision_mission =  "motimis",work_stimulation = "motichal",
+                        training = "motilearn",employee_involvement = "staffme",production_volume="prodvol",
+                        employee_retention="retainemp",technology_adoption ="ictapp",upskilling="skillch",
+                        suggestion_scheme ="suggs",position ="posres", market_competition="competmark",
+                        market_demand="pdemstab",teamwork="teamex",employee_turnover="chemp",static_employee="learnnoneed_d")
+
+
+ecds <-  ecds %>% filter(collaboration != -3, design_collaboration != -3,product_innovation != -3,
+                        process_innovation!= -3,marketing_innovation != -3,manager_approach!= -3,monetary_reward != -3,
+                        vision_mission != -3,work_stimulation != -3,training != -3,employee_involvement != -3,suggestion_scheme!= -3,
+                        position != -3,technology_adoption !=-3,production_volume!=-3,upskilling!=-3,employee_retention!=-3, 
+                        market_demand!=-3,market_competition!=-3,static_employee !=-3,teamwork!=-3,employee_turnover!=-3)
+
+# Data inspection and Descriptive statistics #
+ summary(ecds)
+ str(ecds)
+ skim(ecds)
+          
+
+#### DATA TRANSFORMATION  & MANIPULATION ####
+ # mutate some numeric variables to categorical variable for data visualization #
+
+ ecds <- ecds %>% mutate (industry= ifelse(industry== 3, "production",
+                                      ifelse(industry== 2, "production",
+                                      ifelse(industry== 4, "production",
+                                      ifelse(industry== 5, "production",
+                                      ifelse(industry== 6, "construction",
+                                      ifelse(industry== 7, "commerce_hospitality",
+                                      ifelse(industry== 8, "Transport",
+                                      ifelse(industry== 9, "commerce_hospitality",
+                                      ifelse(industry== 11,"financial",
+                                      ifelse(industry== 10, "other_services",
+                                             "other_services")))))))))))
+
+
+ecds$industry <-factor(ecds$industry, levels = c("production","construction","commerce_hospitality",
+                                                 "Transport","financial",
+                                                 "other_services"))
+
+
+ecds <- ecds %>% mutate (country= ifelse(country == 21, "Poland",
+                          ifelse(country== 11, "Germany",
+                          ifelse(country== 15, "Italy",
+                          ifelse(country== 26, "Spain",
+                          ifelse(country== 10, "France",
+                          ifelse(country== 28, "UK","UK")))))))
+
+
+ecds <- ecds %>% mutate (firm_size = ifelse(size == 1, "small",
+                            ifelse (size== 2, "medium",
+                            ifelse (size== 3, "large","large"))))
+
+
+ecds <- ecds %>% mutate (product_innovation1 = ifelse(product_innovation == 1, "Innovation to market",
+                        ifelse (product_innovation== 2, "Innovation to establishment",
+                         ifelse (product_innovation== 3, "No innovation","No innovation"))))
+
+ecds$product_innovation1 <-factor(ecds$product_innovation1, levels = c("No innovation","Innovation to market", 
+                                                                       "Innovation to establishment"))
+                                                 
+
+ecds <- ecds %>% mutate (process_innovation1 = ifelse(process_innovation == 1, "Innovation to market",
+                  ifelse (process_innovation== 2, "Innovation to establishment",
+                  ifelse (process_innovation== 3, "No innovation","No innovation"))))
+
+ecds$process_innovation1 <-factor(ecds$process_innovation1, levels = c("No innovation","Innovation to market", 
+                                                                       "Innovation to establishment"))
+
+
+ecds <- ecds %>% mutate (firm_type = ifelse(firm_type == 1, "single_firm",
+                          ifelse (firm_type== 2, "headquaters",
+                          ifelse (firm_type== 3, "subsidiary","subsidiary"))))
+
+
+ecds <- ecds %>% mutate (position = ifelse(position == 1, "general manager",
+                          ifelse (position== 2, "owner manager",
+                          ifelse (position== 3, "HRM",
+                          ifelse (position== 4, "Training manager",
+                          ifelse (position== 5, "finance manager",
+                          ifelse (position== 6,  "others","others")))))))
+
+ecds$position <-factor(ecds$position, levels = c("general manager", "owner manager","HRM",
+                                              "Training manager","finance manager","others"))
+
+ecds <- ecds %>% mutate (collaboration1 = ifelse(collaboration == 1,"internal collaboration",
+                        ifelse (collaboration== 2, "Collaborating with other establishments",
+                        ifelse (collaboration== 3, "Collaborating with other establishments",
+                        ifelse (collaboration== 4 ,"mainly outsourced",
+                        ifelse (collaboration== 5, "No collaboration","No collaboration"))))))
+
+ecds$collaboration1 <-factor(ecds$collaboration1, levels = c("internal collaboration", "Collaborating with other establishments",
+                                                             "mainly outsourced", "No collaboration"))
+
+
+
+
+##Reorder the levels of the outcome variable (Production volume) and some Key explanatory variables and covert back to numeric for Data Analysis##
+
+ecds$production_volume <- factor(ecds$production_volume, ordered = TRUE, 
+                                 levels = c(3, 2, 1))
+
+ecds$production_volume<- as.numeric(ecds$production_volume)
+
+
+ecds$size <- factor(ecds$size, ordered = TRUE, 
+                                 levels = c(3, 2, 1))
+ecds$size<- as.numeric(ecds$size)
+
+
+ecds$upskilling <- factor(ecds$upskilling, ordered = TRUE, 
+                    levels = c(4,3, 2, 1))
+ecds$upskilling<- as.numeric(ecds$upskilling)
+
+
+ecds$monetary_reward <- factor(ecds$monetary_reward, ordered = TRUE, 
+                          levels = c(4,3, 2, 1))
+ecds$monetary_reward<- as.numeric(ecds$monetary_reward)
+
+ecds$vision_mission <- factor(ecds$vision_mission, ordered = TRUE, 
+                          levels = c(4,3, 2, 1))
+ecds$vision_mission<- as.numeric(ecds$vision_mission)
+
+ecds$work_stimulation <- factor(ecds$work_stimulation, ordered = TRUE, 
+                              levels = c(4,3, 2, 1))
+ecds$work_stimulation<- as.numeric(ecds$work_stimulation)
+
+ecds$market_demand <- factor(ecds$market_demand, ordered = TRUE, 
+                          levels = c(4,3, 2, 1))
+ecds$market_demand<- as.numeric(ecds$market_demand)
+
+ecds$market_competition <- factor(ecds$market_competition, ordered = TRUE, 
+                             levels = c(4,3, 2, 1))
+ecds$market_competition<- as.numeric(ecds$market_competition)
+
+
+ecds$product_innovation <- factor(ecds$product_innovation, ordered = TRUE, 
+                          levels = c(3, 2, 1))
+ecds$product_innovation<- as.numeric(ecds$product_innovation)
+
+
+ecds$process_innovation<- factor(ecds$process_innovation, ordered = TRUE, 
+                          levels = c(3, 2, 1))
+ecds$process_innovation<- as.numeric(ecds$process_innovation)
+
+
+ecds$marketing_innovation <- factor(ecds$marketing_innovation, ordered = TRUE, 
+                          levels = c(3, 2, 1))
+ecds$marketing_innovation<- as.numeric(ecds$marketing_innovation)
+
+# mutate outcome variable (Production volume) to a categorical variable for data visualization
+ecds <- ecds %>% mutate (production_volume1 = ifelse(production_volume == 1, "Decreased",
+                                              ifelse (production_volume== 2, "The same",
+                                              ifelse (production_volume== 3, "Increased","Increased"))))
+
+ecds$production_volume1<-factor(ecds$production_volume1, levels = c("Decreased","The same", 
+                                                                    "Increased"))
+
+
+
+
+# Convert industry and country variables to dummy variables #
+industry_dummies <- model.matrix(~ industry - 1, data = ecds)  
+country_dummies <- model.matrix(~ country - 1, data = ecds) 
+
+# combine dummies to the data set.
+ecds <- cbind(ecds, industry_dummies)
+ecds <- cbind(ecds, country_dummies)
+
+
+
+### DATA VISUALISATION ###
+
+fig4 <- plot_frq(data = ecds,country,title = "frequency by country")+ theme_blank()
+fig4
+
+fig5 <- ecds %>% ggplot(aes(country, fill = industry)) + 
+  geom_bar(position = "fill", alpha=0.7, width = 0.6) +
+  scale_y_continuous(labels = function(x) paste0(x * 100),breaks = seq(0, 1, by = 0.1))+
+  theme_light()+ theme(panel.grid.major = element_blank())+
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.6))+
+  scale_fill_manual(values = c("red", "blue", "green","darkred","gold","purple")) +
+  labs(y = NULL, x = "country")+ 
+  ggtitle(label= "Distribution of firm by", subtitle = "country and industry in (%)")
+fig5
+
+ 
+fig6 <- ecds %>% ggplot(aes(industry,fill = firm_size)) + 
+  geom_bar(position = "fill", alpha=0.6, width= 0.6) +
+  scale_y_continuous(labels = scales::percent_format())+
+  theme_light()+ theme(panel.grid.major = element_blank())+
+  theme(axis.text.x = element_text(angle = 55, hjust = 0.9))+
+  scale_fill_manual(values = c("red", "blue", "green")) +
+  labs(y = NULL, x =NULL)+ 
+  ggtitle(label= "Distribution of Industry by size")
+fig6
+
+summary_table <- ecds %>%
+  group_by(firm_type) %>%
+  summarise(count = n())
+
+summary_table <- summary_table %>%
+  mutate(percentage = (count / sum(count)) * 100)
+
+fig7 <- ggplot(summary_table, aes(firm_type, percentage)) +
+  geom_bar(stat = "identity", fill = "blue", width = 0.5,alpha=0.6) + 
+  geom_text(aes(label = paste0(round(percentage), "%")), vjust = -0.10, size = 3)+
+  labs(title = "Distribution of industry by type of Firm", x = "Firm type",y = NULL) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+
+  theme_classic()+ theme(panel.grid.major = element_blank())
+fig7
+
+
+summary_table2 <- ecds %>%
+  group_by(position) %>%
+  summarise(count = n())
+
+
+summary_table2 <- summary_table2 %>%
+  mutate(percentage = (count / sum(count)) * 100)
+
+fig8 <- ggplot(summary_table2, aes(position, percentage)) +
+  geom_bar(stat = "identity", fill= "blue", alpha= 0.6,width = 0.5) + 
+  geom_text(aes(label = paste0(round(percentage), "%")), vjust = -0.10, size = 3)+
+  labs(title = "Distribution of position in percentage", x = "position",y = NULL)+
+  theme_bw()+ theme(panel.grid.major = element_blank())+
+  theme(axis.text.x = element_text(angle = 50,hjust = 0.9))
+  fig8
+ 
+  fig9 <- ecds%>% ggplot(aes(country,fill=product_innovation1)) +
+    geom_bar(position = "fill",width=0.5,alpha =0.6)+
+    theme_light()+ theme(panel.grid.major = element_blank())+theme(legend.position = "bottom", 
+    legend.title = element_blank(), panel.background = element_blank())+
+    labs(y = NULL, x = NULL)+scale_y_continuous(labels = scales::percent_format(),breaks = seq(0, 1, by = 0.1))+
+    scale_fill_manual(values = c("red", "blue", "green")) +
+    ggtitle(label= "Levels of Product Innovation by Country")+
+    theme(axis.text.x = element_text(angle = 50,hjust = 0.9))
+  fig9
+  
+  
+  figa <- ecds%>% ggplot(aes(industry,fill=product_innovation1)) +
+    geom_bar(position = "fill",width=0.6,alpha =0.6)+
+    theme_light()+theme(panel.grid.major = element_blank())+theme(legend.position = "bottom", 
+    legend.title = element_blank(), panel.background = element_blank())+
+    labs(y = "Levels of Innovation in (%)", x = NULL)+scale_y_continuous(labels = function(x) paste0(x * 100),breaks = seq(0, 1, by = 0.1))+
+    scale_fill_manual(values = c("red", "blue", "green")) +
+    ggtitle(label= "Levels of product Innovation",subtitle = " by industry in percentage")+
+    theme(axis.text.x = element_text(angle = 50,hjust = 0.9))
+  figa
+  
+  figb <- ecds%>% ggplot(aes(industry,fill=process_innovation1)) +
+    geom_bar(position = "fill",width=0.6,alpha =0.6)+
+    theme_light()+theme(panel.grid.major = element_blank())+theme(legend.position = "bottom", 
+    legend.title = element_blank(), panel.background = element_blank())+
+    labs( x = NULL,y = NULL)+scale_y_continuous(labels = function(x) paste0(x * 100),breaks = seq(0, 1, by = 0.1))+
+    scale_fill_manual(values = c("red", "blue", "green")) +
+    ggtitle(label= "Levels of process Innovation",subtitle =  "by industry in percentage")+
+    theme(axis.text.x = element_text(angle = 50, hjust = 0.9))
+    figb
+  
+  # Combine plots side by side using facet_grid
+  fig10 <- grid.arrange(figa, figb, ncol = 2)
+  
+  
+ fig11 <- ecds%>% ggplot(aes(industry,fill= collaboration1)) +
+    geom_bar(position = "fill",width=0.7,alpha =0.6)+
+    theme_bw()+ theme(panel.grid.major = element_blank())+theme(legend.position = "bottom", 
+    legend.title = element_blank(), panel.background = element_blank())+
+    labs(y = "Levels of collaboration (%)",x = NULL)+scale_y_continuous(labels = function(x) paste0(x * 100),breaks = seq(0, 1, by = 0.1))+
+    scale_fill_manual(values = c("red", "blue", "green","purple")) + coord_flip()+
+    ggtitle(label= "Collaboration according to firm activity", subtitle = "by industry")+
+    theme(axis.text.x = element_text(angle = 90,hjust = 0.9))
+    fig11
+    
+  
+    fig12 <- ecds%>% ggplot(aes(country,fill= production_volume1)) +
+      geom_bar(position = "fill",width=0.7,alpha =0.6)+
+      theme_light()+ theme(panel.grid.major = element_blank())+theme(legend.position = "bottom", 
+      legend.title = element_blank(), panel.background = element_blank())+
+      labs(y = "production volume (%)",x = NULL)+scale_y_continuous(labels = function(x) paste0(x * 100),breaks = seq(0, 1, by = 0.1))+
+      scale_fill_manual(values = c("red", "blue", "green")) + coord_flip()+
+      ggtitle(label= "Amount of goods or services produced", subtitle = "by country")+
+      theme(axis.text.x = element_text(angle = 90,hjust = 0.9))
+    fig12
+  
+    fig13 <- ecds%>% ggplot(aes(industry,production_volume,fill= factor(country))) +
+      geom_bar(position = "fill",stat = "summary", fun = "mean",width=0.7,alpha =0.6)+
+      theme_bw()+ theme(panel.grid.major = element_blank())+theme(legend.position = "bottom", 
+      legend.title = element_blank(), panel.background = element_blank())+
+      labs(y = "production volume (%)",x = NULL)+scale_y_continuous(labels = function(x) paste0(x * 100),breaks = seq(0, 1, by = 0.1))+
+      scale_fill_manual(values = c("red", "blue", "green","purple","darkred","gold")) + coord_flip()+
+      ggtitle(label= "Amount of goods or services produced between countries", subtitle = "by industry")+
+      theme(axis.text.x = element_text(angle = 90,hjust = 0.9))
+    fig13
+  
+ 
+ ### DATA ANALYSIS ###  
+ 
+    # Multiple Linear regression analysis #
+
+ model1 <- lm(production_volume ~ countryItaly +countrySpain+countryGermany+
+                   countryPoland+countryUK+industryproduction+industryTransport+
+                   industryother_services+industrycommerce_hospitality+industryfinancial+
+                   factor(collaboration)+factor(design_collaboration)+factor(training)+monetary_reward +vision_mission+
+                   work_stimulation +upskilling+factor(technology_adoption)+employee_involvement+
+                   market_demand+market_competition+suggestion_scheme+ manager_approach+employee_retention+
+                   static_employee+teamwork+ employee_turnover+size,data = ecds)
+summary(model1)
+    
+    
+      
+model2 <- lm(production_volume ~ countryItaly +countrySpain+countryGermany+
+                   countryPoland+countryUK+industryproduction+industryTransport+
+                   industryother_services+industrycommerce_hospitality+industryfinancial+
+                   +product_innovation+process_innovation+marketing_innovation+
+                   factor(collaboration)+factor(design_collaboration)+factor(training)+
+                    monetary_reward +vision_mission +work_stimulation+
+                   upskilling+employee_involvement+ factor(technology_adoption)+
+                   employee_retention + market_demand+ market_competition+suggestion_scheme + manager_approach+
+                   teamwork+ static_employee +employee_turnover+size,data = ecds)
+summary(model2)
+    
+       
+model3 <- lm(production_volume ~ countryItaly + countrySpain + countryGermany+
+                   countryPoland+ countryUK + industryproduction + industryTransport +
+                   industryother_services + industrycommerce_hospitality + industryfinancial+
+                   product_innovation+process_innovation+marketing_innovation+
+                   factor(technology_adoption)+ upskilling+market_demand+market_competition+
+                   static_employee+size+employee_turnover,data = ecds)
+summary(model3)
+
+
+ # Calculate VIF for each predictor variable in the model
+  vif_values <- vif(model2)
+  
+  # View the VIF values
+  print(vif_values)
+  write.table(vif_values, file = "vif_values1.txt", sep = "\t", col.names = NA)
+  
+  
+
+ stargazer(model1,model2,model3, type="html",omit= c("constant"),out = "modelnew1.html")
+ 
+
+ # Create a unique roll number column
+  ecds$roll_number <- row.names(ecds)
+  
+  #  data split
+  train <- ecds %>% sample_frac(0.75,by ="roll_number")
+  test  <-anti_join (ecds, train, by = "roll_number")
+  
+  #  descriptive stats
+  skim(train)
+  skim(test)
+  
+# Prediction model #
+    model4 <- lm(production_volume ~ countryItaly+countrySpain+countryGermany+
+                 countryPoland+countryUK+industryproduction+industryTransport+
+                 industryother_services+industrycommerce_hospitality+industryfinancial+
+                 factor(collaboration)+factor(design_collaboration)+ product_innovation+process_innovation+
+                 marketing_innovation+monetary_reward + vision_mission +work_stimulation +
+                 factor(training) + upskilling +employee_involvement+ factor(technology_adoption)+
+                 employee_retention +market_demand+market_competition+suggestion_scheme+ manager_approach+
+                 static_employee+teamwork+size+employee_turnover,data = train)
+  
+  summary(model4)
+  
+  stargazer(model4, type = "html",omit = c("constant"),out="modeltrain1.html")
+  
+ 
+  # linear prediction 
+  train <- augment(model4, train)
+  test <- augment(model4, newdata = test)
+  test %>% summarise(RMSE = sqrt(mean(.resid^2)))
+  train %>% summarise(RMSE = sqrt(mean(.resid^2)))
+  
+  #plot linear prediction
+ 
+   fig14 <- ggplot(train, aes(x =product_innovation, y = .fitted))+
+    geom_point(size= 2,alpha = 0.1,shape=18,colour="darkblue")  +
+    geom_smooth(method = "lm", se = FALSE) +   
+    ggtitle(label= "Predicted production volume", subtitle = "By Product Innovation")+
+   theme_classic()+ theme(legend.position = "bottom", legend.title = element_blank(), panel.background = element_blank()) + 
+    ylab("Predicted production volume") + xlab("Product Innovation")+scale_y_continuous()+
+    scale_x_discrete(limits=c("1","2","3"))
+  fig14
+  
+  fig15 <- ggplot(train, aes(x = monetary_reward, y = .fitted))+
+    geom_point(size= 2,alpha = 0.1,shape=18,colour="darkblue")  +
+    geom_smooth(method = "lm", se = FALSE) +   
+    ggtitle(label= "Predicted production volume", subtitle = "By monetary reward")+
+    theme_classic()+ theme(legend.position = "bottom", legend.title = element_blank(), panel.background = element_blank()) + 
+    ylab("Predicted production volume") + xlab("monetary reward")+scale_y_continuous()+
+    scale_x_discrete(limits=c("1","2","3","4"))
+  fig15
+  
+ 
+ 
+fig16 <-  ggplot(train,aes(y = .fitted, x =employee_turnover ),alpha = 0.1) + 
+   geom_point(shape=18,size=2 ,alpha = 0.1,colour="darkblue") +
+  geom_smooth(method = "lm", se = FALSE) +
+   theme_classic()+ylab("predicted production volume") + xlab("Employee Turnover")+
+   labs(title = "Predicted production volume by employee turnover")+
+  scale_y_continuous()
+  fig16
+
+  
+ ### Cross-validation of Model ###.
+  
+ myformula <- production_volume ~ countryItaly +countrySpain+countryGermany+
+      countryPoland+countryUK+industryproduction+industryTransport+
+      industryother_services+industrycommerce_hospitality+industryfinancial+
+      factor(collaboration)+factor(design_collaboration)+product_innovation+process_innovation+
+      marketing_innovation+monetary_reward +vision_mission +work_stimulation +
+      factor(training) +upskilling+employee_involvement+ technology_adoption+
+      employee_retention +market_demand+market_competition+suggestion_scheme+ manager_approach+
+      static_employee+teamwork+employee_turnover+size
+
+  # linear prediction model with k-fold cross-validation.  
+  # Set the number of folds (k)
+  k <- 10
+  
+  # Define the cross-validation method
+  caret <- trainControl(method = "cv", number = k)
+  
+  
+  # Fit model using cross-validation
+  model5 <- train(myformula, data = ecds, method = "lm", trControl = caret)
+  
+  # View the cross-validation results
+  print(model5)
+  
+ # linear prediction method with cross validation lasso regression
+   lasso.caret <- train(myformula,data = ecds,
+  metric = "RMSE",
+  method = "glmnet",
+  trControl = trainControl(method = "cv", number = 10))
+ lasso.caret```
+  
+
+  
+ 
+
+ 
+  
+
